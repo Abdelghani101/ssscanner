@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#06081a">
+<title>CaLMoviE — Ticket Scanner</title>
+
+<!-- Html5-qrcode: reliable, works on all browsers incl. iOS Safari & Firefox -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+/* ═══════════════════════════════════
+   RESET + BASE
+═══════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{
+  width:100%;height:100%;
+  overflow:hidden;
+  background:#06081a;
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  -webkit-text-size-adjust:100%;
+  color:#eef0f8;
+}
+
+/* ═══════════════════════════════════
+   SCREEN SYSTEM
+═══════════════════════════════════ */
+.screen{
+  position:fixed;inset:0;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:24px 20px;
+  opacity:0;pointer-events:none;
+  transition:opacity .3s ease;
+  z-index:1;
+  text-align:center;
+}
+.screen.show{opacity:1;pointer-events:all;z-index:10}
+
+/* ═══════════════════════════════════
+   SCAN SCREEN
+═══════════════════════════════════ */
+#s-scan{
+  background:#06081a;
+  justify-content:flex-start;
+  padding-top:0;
+}
+
+/* brand bar */
+.brand-bar{
+  width:100%;
+  background:linear-gradient(135deg,rgba(139,26,26,.9),rgba(10,14,42,.95));
+  border-bottom:1px solid rgba(212,175,55,.25);
+  padding:14px 20px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+  backdrop-filter:blur(10px);
+  position:relative;z-index:2;
+}
+.brand-name{
+  font-size:1rem;font-weight:800;letter-spacing:5px;
+  color:#d4af37;text-transform:uppercase;
+  text-shadow:0 0 12px rgba(212,175,55,.5);
+}
+.brand-tag{
+  font-size:.58rem;letter-spacing:2px;text-transform:uppercase;
+  color:rgba(255,255,255,.45);
+}
+
+/* camera region */
+#reader-wrap{
+  flex:1;width:100%;position:relative;overflow:hidden;background:#000;
+}
+
+/* Html5Qrcode injects a <div id="reader"> — we style it */
+#reader{
+  width:100% !important;
+  height:100% !important;
+  border:none !important;
+}
+/* hide the library's default shaded region & buttons we don't need */
+#reader__scan_region{
+  position:absolute !important;
+  inset:0 !important;
+  width:100% !important;
+  height:100% !important;
+  background:transparent !important;
+  border:none !important;
+}
+#reader video{
+  width:100% !important;
+  height:100% !important;
+  object-fit:cover !important;
+  display:block !important;
+}
+/* hide library header/footer controls */
+#reader__header_message,
+#reader__status_span,
+#reader__dashboard,
+#reader__dashboard_section,
+#reader__filescan_input{display:none !important}
+
+/* Our custom overlay ON TOP of camera */
+.cam-overlay{
+  position:absolute;inset:0;z-index:3;pointer-events:none;
+  background:
+    linear-gradient(180deg,
+      rgba(6,8,26,.7) 0%,
+      transparent 22%,
+      transparent 78%,
+      rgba(6,8,26,.7) 100%);
+}
+
+/* Viewfinder */
+.vf{
+  position:absolute;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:clamp(220px,65vw,280px);
+  height:clamp(220px,65vw,280px);
+  z-index:4;pointer-events:none;
+}
+.vf::before,.vf::after,.vf-b::before,.vf-b::after{
+  content:'';position:absolute;
+  width:32px;height:32px;
+  border-color:#d4af37;border-style:solid;
+}
+.vf::before {top:0;left:0;   border-width:3px 0 0 3px;border-radius:4px 0 0 0}
+.vf::after  {top:0;right:0;  border-width:3px 3px 0 0;border-radius:0 4px 0 0}
+.vf-b::before{bottom:0;left:0; border-width:0 0 3px 3px;border-radius:0 0 0 4px}
+.vf-b::after {bottom:0;right:0;border-width:0 3px 3px 0;border-radius:0 0 4px 0}
+.vf-line{
+  position:absolute;left:5%;right:5%;height:2px;top:0;
+  background:linear-gradient(90deg,transparent,#d4af37 30%,#f2d060 50%,#d4af37 70%,transparent);
+  box-shadow:0 0 10px rgba(212,175,55,.9);
+  animation:lineY 1.8s ease-in-out infinite;
+}
+@keyframes lineY{0%{top:4%}50%{top:92%}100%{top:4%}}
+
+/* bottom label bar */
+.scan-bottom{
+  width:100%;
+  background:linear-gradient(0deg,rgba(6,8,26,.95),rgba(6,8,26,.6));
+  padding:14px 20px 20px;
+  flex-shrink:0;z-index:2;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+}
+.scan-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:#d4af37;display:inline-block;
+  margin-right:7px;vertical-align:middle;
+  box-shadow:0 0 6px rgba(212,175,55,.8);
+  animation:blink 1.2s infinite;
+}
+@keyframes blink{0%,100%{opacity:.3}50%{opacity:1}}
+.scan-label{
+  font-size:.78rem;letter-spacing:2.5px;text-transform:uppercase;
+  color:rgba(255,255,255,.7);
+}
+.scan-counter{
+  font-size:.62rem;letter-spacing:2px;color:rgba(212,175,55,.5);
+  text-transform:uppercase;
+}
+
+/* error overlay */
+.err-overlay{
+  position:absolute;inset:0;z-index:20;
+  background:rgba(6,8,26,.97);
+  display:none;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:14px;padding:32px;
+}
+.err-overlay.show{display:flex}
+.err-icon{font-size:3rem}
+.err-title{font-size:1rem;font-weight:700;color:#e74c3c;letter-spacing:2px}
+.err-msg{font-size:.8rem;color:rgba(255,255,255,.55);line-height:1.7;max-width:300px}
+.err-btn{
+  padding:12px 28px;
+  background:linear-gradient(135deg,#d4af37,#b8960a);
+  border:none;border-radius:10px;
+  color:#0a0e2a;font-weight:800;font-size:.85rem;letter-spacing:2px;
+  cursor:pointer;margin-top:6px;
+}
+
+/* ═══════════════════════════════════
+   RESULT SCREENS
+═══════════════════════════════════ */
+
+/* valid */
+#s-valid  {background:radial-gradient(ellipse at center,#0f3d0f 0%,#04190a 100%)}
+/* invalid */
+#s-invalid{background:radial-gradient(ellipse at center,#3d0f0f 0%,#190404 100%)}
+/* used */
+#s-used   {background:radial-gradient(ellipse at center,#3d3d00 0%,#191900 100%)}
+
+.res-icon{
+  font-size:clamp(3.5rem,16vw,6rem);
+  line-height:1;margin-bottom:10px;
+  animation:pop .45s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes pop{0%{transform:scale(0) rotate(-15deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+
+.res-status{
+  font-size:clamp(1.5rem,7vw,2.6rem);
+  font-weight:900;letter-spacing:4px;text-transform:uppercase;
+  animation:up .4s .08s both;
+}
+#s-valid   .res-status{color:#3eff3e}
+#s-invalid .res-status{color:#ff3e3e}
+#s-used    .res-status{color:#ffee3e}
+
+.res-sub{
+  font-size:clamp(.65rem,2.8vw,.82rem);
+  letter-spacing:3px;text-transform:uppercase;
+  opacity:.6;margin-bottom:20px;
+  animation:up .4s .14s both;
+}
+@keyframes up{0%{transform:translateY(18px);opacity:0}100%{transform:none;opacity:1}}
+
+/* ticket info card */
+.tkt-card{
+  background:rgba(255,255,255,.07);
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:16px;
+  padding:18px 22px;
+  width:100%;max-width:360px;
+  text-align:left;
+  animation:up .4s .2s both;
+}
+.tkt-row{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  gap:10px;padding:7px 0;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  font-size:clamp(.7rem,2.8vw,.82rem);
+}
+.tkt-row:last-child{border-bottom:none}
+.tk{color:rgba(255,255,255,.45);letter-spacing:1px;text-transform:uppercase;font-size:.6rem;flex-shrink:0;padding-top:1px}
+.tv{color:#fff;font-weight:600;text-align:right;word-break:break-word;max-width:200px}
+.tv.code{color:#d4af37;font-family:monospace;letter-spacing:2px}
+.tv.red {color:#ff3e3e}
+.tv.yel {color:#ffee3e}
+
+/* used card */
+.used-card{
+  background:rgba(255,238,0,.07);
+  border:1px solid rgba(255,238,0,.18);
+  border-radius:16px;
+  padding:20px 24px;
+  width:100%;max-width:340px;
+  animation:up .4s .2s both;
+}
+.used-code{font-family:monospace;font-size:1rem;color:#ffee3e;letter-spacing:3px;margin-bottom:4px}
+.used-when{font-size:.7rem;color:rgba(255,255,255,.45);letter-spacing:1px;margin-bottom:10px}
+.used-warn{font-size:.72rem;color:rgba(255,238,78,.55);line-height:1.6;letter-spacing:.5px}
+
+/* invalid card */
+.inv-card{
+  background:rgba(255,62,62,.06);
+  border:1px solid rgba(255,62,62,.18);
+  border-radius:16px;
+  padding:18px 24px;
+  width:100%;max-width:340px;
+  animation:up .4s .2s both;
+  font-size:.8rem;color:rgba(255,255,255,.55);
+  line-height:1.7;letter-spacing:.5px;
+}
+.inv-raw{
+  margin-top:8px;font-family:monospace;font-size:.68rem;
+  color:rgba(255,100,100,.6);word-break:break-all;letter-spacing:.5px;
+}
+
+/* scan-again button */
+.btn-again{
+  margin-top:18px;
+  padding:13px 36px;
+  background:rgba(255,255,255,.1);
+  border:1px solid rgba(255,255,255,.22);
+  border-radius:30px;color:#fff;
+  font-size:.78rem;letter-spacing:3px;text-transform:uppercase;
+  cursor:pointer;transition:background .2s;
+  animation:up .4s .28s both;
+}
+.btn-again:hover{background:rgba(255,255,255,.2)}
+
+/* auto-return progress bar */
+.progress-bar{
+  position:fixed;bottom:0;left:0;height:3px;
+  background:rgba(212,175,55,.7);
+  width:0%;transition:none;
+  z-index:50;
+}
+.progress-bar.run{transition:width linear;}
+
+/* flash overlay */
+#flash{
+  position:fixed;inset:0;z-index:999;
+  pointer-events:none;opacity:0;
+  transition:opacity .06s;
+}
+#flash.pop{opacity:.4;transition:none}
+
+/* scanned count badge */
+#scan-count-badge{
+  position:fixed;top:60px;left:14px;z-index:30;
+  background:rgba(212,175,55,.12);
+  border:1px solid rgba(212,175,55,.25);
+  border-radius:20px;padding:5px 12px;
+  font-size:.58rem;letter-spacing:2px;color:rgba(212,175,55,.7);
+  text-transform:uppercase;display:none;
+}
+</style>
+</head>
+<body>
+
+<!-- FLASH EFFECT -->
+<div id="flash"></div>
+
+<!-- SCANNED COUNT BADGE -->
+<div id="scan-count-badge" id="scb">0 scanned today</div>
+
+<!-- PROGRESS BAR (auto-return) -->
+<div class="progress-bar" id="progress"></div>
+
+<!-- ═══ SCAN SCREEN ═══ -->
+<div class="screen show" id="s-scan">
+
+  <div class="brand-bar">
+    <div class="brand-name">CaLMoviE</div>
+    <div class="brand-tag">🎬 Ticket Scanner</div>
+  </div>
+
+  <div id="reader-wrap">
+    <!-- Html5Qrcode mounts here -->
+    <div id="reader"></div>
+
+    <!-- Our overlays on top of camera -->
+    <div class="cam-overlay"></div>
+    <div class="vf"><div class="vf-b"></div><div class="vf-line"></div></div>
+
+    <!-- Error overlay -->
+    <div class="err-overlay" id="err-overlay">
+      <div class="err-icon">📷</div>
+      <div class="err-title" id="err-title">Camera Unavailable</div>
+      <div class="err-msg"  id="err-msg">Camera access was denied or unavailable.</div>
+      <button class="err-btn" onclick="startScanner()">Try Again</button>
+    </div>
+  </div>
+
+  <div class="scan-bottom">
+    <div class="scan-label"><span class="scan-dot"></span>Point camera at QR code</div>
+    <div class="scan-counter" id="scan-counter"></div>
+  </div>
+
+</div>
+
+<!-- ═══ VALID SCREEN ═══ -->
+<div class="screen" id="s-valid">
+  <div class="res-icon">✅</div>
+  <div class="res-status">Valid Ticket</div>
+  <div class="res-sub">Entry Approved</div>
+  <div class="tkt-card" id="valid-card"></div>
+  <button class="btn-again" onclick="doScanAgain()">▶ Scan Next</button>
+</div>
+
+<!-- ═══ INVALID SCREEN ═══ -->
+<div class="screen" id="s-invalid">
+  <div class="res-icon">❌</div>
+  <div class="res-status">Invalid Ticket</div>
+  <div class="res-sub">Access Denied · Not a valid QR</div>
+  <div class="inv-card">
+    This QR code is not a valid CaLMoviE cinema ticket.
+    Please check with the box office.
+    <div class="inv-raw" id="inv-raw"></div>
+  </div>
+  <button class="btn-again" onclick="doScanAgain()">▶ Scan Again</button>
+</div>
+
+<!-- ═══ ALREADY USED SCREEN ═══ -->
+<div class="screen" id="s-used">
+  <div class="res-icon">⚠️</div>
+  <div class="res-status">Already Scanned</div>
+  <div class="res-sub">Duplicate — Entry Refused</div>
+  <div class="used-card">
+    <div class="used-code" id="used-code"></div>
+    <div class="used-when" id="used-when"></div>
+    <div class="used-warn">This ticket was already used for entry.<br>Duplicate entry is not permitted.</div>
+  </div>
+  <button class="btn-again" onclick="doScanAgain()">▶ Scan Again</button>
+</div>
+
+<!-- ═══════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════ -->
+<script>
+/* ──────────────────────────────────────────
+   ⚙️ CONFIG
+   QR format: CaLMoviE|CM-CODE|BID|Name|Phone|Movie|DayDate|Time|NxType|TotalDA
+────────────────────────────────────────── */
+var CINEMA_NAME   = 'CaLMoviE';
+var SCAN_COOLDOWN = 2800;         // ms lockout between scans
+var AUTO_RETURN   = 6000;         // ms before auto-returning to scanner
+var STORAGE_KEY   = 'cm_scanned'; // localStorage key
+
+/* ──────────────────────────────────────────
+   STATE
+────────────────────────────────────────── */
+var html5QrCode   = null;
+var scanning      = false;
+var lastScanAt    = 0;
+var returnTimer   = null;
+var progressTimer = null;
+
+/* ──────────────────────────────────────────
+   LOCAL STORAGE HELPERS
+────────────────────────────────────────── */
+function dbGet() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e){ return {}; }
+}
+function dbSave(obj) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); } catch(e){}
+}
+function dbMark(code, meta) {
+  var db = dbGet(); db[code] = meta; dbSave(db);
+}
+function dbCheck(code) {
+  return dbGet()[code] || null;
+}
+function dbCount() {
+  return Object.keys(dbGet()).length;
+}
+
+/* ──────────────────────────────────────────
+   SCREEN MANAGER
+────────────────────────────────────────── */
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('show'); });
+  var el = document.getElementById(id);
+  if (el) {
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ el.classList.add('show'); });
+    });
+  }
+}
+
+/* ──────────────────────────────────────────
+   HTML5-QRCODE SCANNER
+────────────────────────────────────────── */
+function startScanner() {
+  var errOverlay = document.getElementById('err-overlay');
+  if (errOverlay) errOverlay.classList.remove('show');
+
+  // Destroy previous instance if any
+  if (html5QrCode) {
+    html5QrCode.stop().catch(function(){}).finally(function(){ launchScanner(); });
+  } else {
+    launchScanner();
+  }
+}
+
+function launchScanner() {
+  html5QrCode = new Html5Qrcode('reader', {
+    verbose: false,
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+  });
+
+  var config = {
+    fps: 15,
+    qrbox: function(w, h) {
+      var size = Math.min(w, h) * 0.65;
+      return { width: size, height: size };
+    },
+    aspectRatio: window.innerHeight / window.innerWidth,
+    rememberLastUsedCamera: true,
+    supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+  };
+
+  html5QrCode.start(
+    { facingMode: 'environment' },   // rear camera
+    config,
+    onScanSuccess,
+    function() {}                    // suppress per-frame errors
+  ).then(function() {
+    scanning = true;
+    updateCounter();
+  }).catch(function(err) {
+    var msg = String(err || '');
+    var title, body;
+    if (/permission|denied|notallowed/i.test(msg)) {
+      title = 'Camera Permission Denied';
+      body  = 'Please allow camera access in your browser settings, then tap Try Again.';
+    } else if (/notfound|devices/i.test(msg)) {
+      title = 'No Camera Found';
+      body  = 'This device does not have an accessible camera.';
+    } else {
+      title = 'Camera Error';
+      body  = msg || 'An unknown error occurred starting the camera.';
+    }
+    showErr(title, body);
+  });
+}
+
+function showErr(title, body) {
+  var ov = document.getElementById('err-overlay');
+  document.getElementById('err-title').textContent = title;
+  document.getElementById('err-msg').textContent   = body;
+  if (ov) ov.classList.add('show');
+}
+
+/* ──────────────────────────────────────────
+   ON SCAN SUCCESS
+────────────────────────────────────────── */
+function onScanSuccess(rawText) {
+  if (!scanning) return;
+  var now = Date.now();
+  if (now - lastScanAt < SCAN_COOLDOWN) return;
+  lastScanAt = now;
+  scanning   = false;
+
+  clearTimeout(returnTimer);
+  clearTimeout(progressTimer);
+  triggerFlash();
+  vibrate();
+  updateCounter();
+
+  processQR(rawText);
+}
+
+/* ──────────────────────────────────────────
+   PARSE + VALIDATE QR
+────────────────────────────────────────── */
+function processQR(raw) {
+  var parts = raw.split('|');
+
+  /* Must have 10+ segments AND first segment must be CINEMA_NAME */
+  if (parts.length < 10 || parts[0].trim() !== CINEMA_NAME) {
+    showInvalid(raw);
+    return;
+  }
+
+  var code     = parts[1].trim();  // CM-1001-A7
+  var bid      = parts[2].trim();  // booking ID
+  var name     = parts[3].trim();
+  var phone    = parts[4].trim();
+  var movie    = parts[5].trim();
+  var dayDate  = parts[6].trim();
+  var time     = parts[7].trim();
+  var seats    = parts[8].trim();  // e.g. 2xPouf
+  var total    = parts[9].trim();  // e.g. 3000DA
+
+  /* Already scanned? */
+  var record = dbCheck(code);
+  if (record) {
+    showUsed(code, record.at, record.name);
+    return;
+  }
+
+  /* Valid — save & show */
+  dbMark(code, {
+    at:    new Date().toLocaleString(),
+    name:  name,
+    movie: movie
+  });
+  updateCounter();
+
+  showValid({
+    code: code, bid: bid, name: name, phone: phone,
+    movie: movie, dayDate: dayDate, time: time,
+    seats: seats, total: total
+  });
+}
+
+/* ──────────────────────────────────────────
+   RESULT RENDERERS
+────────────────────────────────────────── */
+function showValid(t) {
+  var card = document.getElementById('valid-card');
+  card.innerHTML =
+    row('Cinema',    CINEMA_NAME) +
+    row('Movie',     t.movie)     +
+    row('Day / Date',t.dayDate)   +
+    row('Time',      t.time)      +
+    row('Seats',     t.seats)     +
+    row('Guest',     t.name)      +
+    row('Phone',     t.phone)     +
+    row('Total',     t.total)     +
+    rowCode('Ticket ID', t.code);
+
+  setFlash('#0f3d0f');
+  showScreen('s-valid');
+  scheduleReturn(AUTO_RETURN, '#0f3d0f');
+}
+
+function showInvalid(raw) {
+  var el = document.getElementById('inv-raw');
+  el.textContent = raw.length > 80 ? raw.slice(0,77) + '…' : raw;
+  setFlash('#3d0f0f');
+  showScreen('s-invalid');
+  scheduleReturn(5000, '#3d0f0f');
+}
+
+function showUsed(code, when, name) {
+  document.getElementById('used-code').textContent = code;
+  document.getElementById('used-when').textContent =
+    'First scanned: ' + (when || 'earlier') + (name ? ' · ' + name : '');
+  setFlash('#2e2e00');
+  showScreen('s-used');
+  scheduleReturn(5500, '#2e2e00');
+}
+
+/* ──────────────────────────────────────────
+   TABLE ROWS
+────────────────────────────────────────── */
+function row(k, v) {
+  return '<div class="tkt-row"><span class="tk">' + esc(k) + '</span><span class="tv">' + esc(v||'—') + '</span></div>';
+}
+function rowCode(k, v) {
+  return '<div class="tkt-row"><span class="tk">' + esc(k) + '</span><span class="tv code">' + esc(v||'—') + '</span></div>';
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ──────────────────────────────────────────
+   RETURN TO SCANNER
+────────────────────────────────────────── */
+function scheduleReturn(ms, color) {
+  var bar = document.getElementById('progress');
+  bar.style.background = color;
+  bar.style.width = '0%';
+  bar.style.transition = 'none';
+  /* start progress animation next frame */
+  requestAnimationFrame(function(){
+    requestAnimationFrame(function(){
+      bar.style.transition = 'width ' + (ms/1000) + 's linear';
+      bar.style.width = '100%';
+    });
+  });
+  returnTimer = setTimeout(function(){ doScanAgain(); }, ms);
+}
+
+function doScanAgain() {
+  clearTimeout(returnTimer);
+  var bar = document.getElementById('progress');
+  bar.style.transition = 'none';
+  bar.style.width = '0%';
+  showScreen('s-scan');
+  scanning   = true;
+  lastScanAt = Date.now(); /* small cooldown before re-firing */
+}
+
+/* ──────────────────────────────────────────
+   COUNTER
+────────────────────────────────────────── */
+function updateCounter() {
+  var n   = dbCount();
+  var el  = document.getElementById('scan-counter');
+  var bdg = document.getElementById('scan-count-badge');
+  if (el)  el.textContent = n > 0 ? n + ' ticket' + (n===1?'':'s') + ' scanned this session' : '';
+  if (bdg) { bdg.textContent = n + ' scanned'; bdg.style.display = n > 0 ? 'block' : 'none'; }
+}
+
+/* ──────────────────────────────────────────
+   FEEDBACK
+────────────────────────────────────────── */
+function setFlash(color) {
+  document.getElementById('flash').style.background = color;
+}
+function triggerFlash() {
+  var f = document.getElementById('flash');
+  f.classList.add('pop');
+  requestAnimationFrame(function(){
+    requestAnimationFrame(function(){ f.classList.remove('pop'); });
+  });
+}
+function vibrate() {
+  try { if (navigator.vibrate) navigator.vibrate([60, 30, 80]); } catch(e){}
+}
+
+/* ──────────────────────────────────────────
+   BOOT
+────────────────────────────────────────── */
+window.addEventListener('load', function() {
+  /* Wait a tick so Html5Qrcode is fully parsed */
+  setTimeout(function() {
+    if (typeof Html5Qrcode === 'undefined') {
+      showErr(
+        'Library failed to load',
+        'Could not load the QR scanner library.\nPlease check your internet connection and reload the page.'
+      );
+      return;
+    }
+    updateCounter();
+    startScanner();
+  }, 200);
+});
+
+/* Handle page visibility — pause/resume scanning */
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) {
+    scanning = false;
+  } else {
+    var scanScreen = document.getElementById('s-scan');
+    if (scanScreen && scanScreen.classList.contains('show')) {
+      setTimeout(function(){ scanning = true; }, 800);
+    }
+  }
+});
+</script>
+</body>
+</html>
